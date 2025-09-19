@@ -187,7 +187,7 @@ class APIScanSettings(BaseModel):
     api_login_payload: Annotated[
         str,
         Field(
-            description=("\Payload to send in the authentication request."),
+            description=("Payload to send in the authentication request."),
             max_length=4096,
         ),
     ]

@@ -266,3 +266,212 @@ def test_targets_start_scan__output_format(
         target_id,
     )
     assert stdout == f"{scan_id}\n", stdout
+
+
+@patch("probely.cli.commands.targets.start_scan.time.sleep")
+@patch("probely.cli.commands.targets.start_scan.retrieve_scans")
+@patch("probely.cli.commands.targets.start_scan.start_scan")
+def test_targets_start_scan__wait_with_progress_updates(
+    start_scan_mock: Mock,
+    retrieve_scans_mock: Mock,
+    sleep_mock: Mock,
+    probely_cli,
+):
+    scan_id = "scan_id"
+    target_id = "target_id"
+    target_name = "Example Site"
+
+    in_progress_scan = {
+        "id": scan_id,
+        "status": "started",
+        "crawler": {"full_status": {"data": {"done": 1, "total": 4}}},
+        "scanner": {"full_status": {"data": {"done": 2, "total": 5}}},
+    }
+    completed_scan = {
+        "id": scan_id,
+        "status": "completed",
+        "started": "2024-07-01T12:00:00Z",
+        "completed": "2024-07-01T12:45:30Z",
+        "criticals": 1,
+        "highs": 2,
+        "mediums": 3,
+        "lows": 4,
+        "crawler": {
+            "full_status": {"data": {"done": 15, "total": 15}},
+            "warning": [{"code": "C1", "message": "Crawler warning"}],
+            "error": ["Crawler error"],
+        },
+        "scanner": {
+            "full_status": {"data": {"done": 10, "total": 10}},
+            "warning": [{"code": "S1", "message": "Scanner warning"}],
+            "error": ["Scanner error"],
+        },
+        "target": {"site": {"name": target_name}},
+    }
+
+    start_scan_mock.return_value = in_progress_scan
+    retrieve_scans_mock.side_effect = [[in_progress_scan], [completed_scan]]
+
+    stdout, stderr = probely_cli(
+        "targets",
+        "start-scan",
+        target_id,
+        "--wait",
+        "5",
+    )
+
+    assert stderr == ""
+
+    expected_lines = [
+        "Scan scan_id: status=started, crawler: 25%, scanner: 40%",
+        "Scan scan_id: status=completed, crawler: 100%, scanner: 100%",
+        "Target Example Site scan scan_id Complete!",
+        " - Scan Duration: 0d 0h 45m 30s (output in days / hours / minutes / seconds)",
+        " - Findings:",
+        "     - Criticals: 1",
+        "     - Highs:     2",
+        "     - Mediu:    3",
+        "     - Lows:      4",
+        "Crawler:",
+        "  - Warnings",
+        "    - C1    Crawler warning",
+        "  - Errors",
+        "    - Crawler error",
+        "Scanner:",
+        "  - Warnings",
+        "    - S1    Scanner warning",
+        "  - Errors",
+        "    - Scanner error",
+        scan_id,
+    ]
+    assert stdout.splitlines() == expected_lines
+
+    start_scan_mock.assert_called_once_with(target_id, {})
+    assert retrieve_scans_mock.call_count == 2
+    sleep_mock.assert_called_once_with(5)
+
+
+@patch("probely.cli.commands.targets.start_scan.time.sleep")
+@patch("probely.cli.commands.targets.start_scan.retrieve_scans")
+@patch("probely.cli.commands.targets.start_scan.start_scan")
+def test_targets_start_scan__wait_without_progress_updates(
+    start_scan_mock: Mock,
+    retrieve_scans_mock: Mock,
+    sleep_mock: Mock,
+    probely_cli,
+):
+    scan_id = "scan_id"
+    target_id = "target_id"
+    target_name = "Another Site"
+
+    queued_scan = {
+        "id": scan_id,
+        "status": "queued",
+        "crawler": {"full_status": {"data": {"done": 0, "total": 1}}},
+        "scanner": {"full_status": {"data": {"done": 0, "total": 1}}},
+    }
+    completed_scan = {
+        "id": scan_id,
+        "status": "completed",
+        "started": "2024-07-01T10:00:00Z",
+        "completed": "2024-07-01T10:05:00Z",
+        "criticals": 0,
+        "highs": 0,
+        "mediums": 1,
+        "lows": 2,
+        "crawler": {"full_status": {"data": {"done": 10, "total": 10}}},
+        "scanner": {"full_status": {"data": {"done": 7, "total": 7}}},
+        "target": {"site": {"name": target_name}},
+    }
+
+    start_scan_mock.return_value = queued_scan
+    retrieve_scans_mock.side_effect = [[queued_scan], [completed_scan]]
+
+    stdout, stderr = probely_cli(
+        "targets",
+        "start-scan",
+        target_id,
+        "--wait",
+        "0",
+    )
+
+    assert stderr == ""
+    expected_lines = [
+        "Target Another Site scan scan_id Complete!",
+        " - Scan Duration: 0d 0h 5m 0s (output in days / hours / minutes / seconds)",
+        " - Findings:",
+        "     - Criticals: 0",
+        "     - Highs:     0",
+        "     - Mediu:    1",
+        "     - Lows:      2",
+        scan_id,
+    ]
+    assert stdout.splitlines() == expected_lines
+
+    start_scan_mock.assert_called_once_with(target_id, {})
+    assert retrieve_scans_mock.call_count == 2
+    sleep_mock.assert_called_once_with(60)
+
+
+@patch("probely.cli.commands.targets.start_scan.time.sleep")
+@patch("probely.cli.commands.targets.start_scan.retrieve_scans")
+@patch("probely.cli.commands.targets.start_scan.start_scan")
+def test_targets_start_scan__wait_failure_summary(
+    start_scan_mock: Mock,
+    retrieve_scans_mock: Mock,
+    sleep_mock: Mock,
+    probely_cli,
+):
+    scan_id = "failed_scan_id"
+    target_id = "target_id"
+
+    initial_scan = {
+        "id": scan_id,
+        "status": "started",
+        "crawler": {"full_status": {"data": {"done": 0, "total": 1}}},
+        "scanner": {"full_status": {"data": {"done": 0, "total": 1}}},
+    }
+    failed_scan = {
+        "id": scan_id,
+        "status": "failed",
+        "crawler": {
+            "full_status": {"data": {"done": 1, "total": 1}},
+            "warning": [{"code": "CW", "message": "Crawler warning"}],
+        },
+        "scanner": {
+            "full_status": {"data": {"done": 1, "total": 1}},
+            "error": ["Scanner failure"],
+        },
+        "target": {"site": {"name": "Failing Site"}},
+    }
+
+    start_scan_mock.return_value = initial_scan
+    retrieve_scans_mock.side_effect = [[initial_scan], [failed_scan]]
+
+    stdout, stderr = probely_cli(
+        "targets",
+        "start-scan",
+        target_id,
+        "--wait",
+        "3",
+    )
+
+    assert stderr == ""
+
+    expected_lines = [
+        "Scan failed_scan_id: status=started, crawler: 0%, scanner: 0%",
+        "Scan failed_scan_id: status=failed, crawler: 100%, scanner: 100%",
+        "Target Failing Site scan failed_scan_id failed",
+        "Crawler:",
+        "  - Warnings",
+        "    - CW    Crawler warning",
+        "Scanner:",
+        "  - Errors",
+        "    - Scanner failure",
+        "failed_scan_id",
+    ]
+    assert stdout.splitlines() == expected_lines
+
+    start_scan_mock.assert_called_once_with(target_id, {})
+    assert retrieve_scans_mock.call_count == 2
+    sleep_mock.assert_called_once_with(3)

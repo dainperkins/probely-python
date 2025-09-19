@@ -30,6 +30,22 @@ from probely.sdk.enums import (
 from probely.settings import FALSY_VALUES, TRUTHY_VALUES
 
 
+def non_negative_int(value: str) -> int:
+    try:
+        parsed_value = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "wait interval must be a non-negative integer"
+        ) from exc
+
+    if parsed_value < 0:
+        raise argparse.ArgumentTypeError(
+            "wait interval must be a non-negative integer"
+        )
+
+    return parsed_value
+
+
 def build_targets_filters_parser() -> argparse.ArgumentParser:
     target_filters_parser = argparse.ArgumentParser(
         description="Filters usable in Targets commands",
@@ -177,6 +193,17 @@ def build_targets_parser():
         metavar="TARGET_ID",
         nargs="*",
         help="Identifiers of the targets to scan",
+        default=None,
+    )
+    start_scan_parser.add_argument(
+        "-w",
+        "--wait",
+        metavar="SECONDS",
+        type=non_negative_int,
+        help=(
+            "Wait for scans to finish. Use 0 to poll every minute without "
+            "progress updates; positive values control the update interval in seconds."
+        ),
         default=None,
     )
     start_scan_parser.set_defaults(
