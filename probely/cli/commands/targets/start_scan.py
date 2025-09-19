@@ -25,6 +25,25 @@ TERMINAL_SCAN_STATUSES = {
     ScanStatusEnum.PAUSED.api_response_value,
 }
 
+BLOCKABLE_SEVERITY_ORDER = ("low", "medium", "high", "critical")
+SEVERITY_FIELDS_IN_ORDER = ("lows", "mediums", "highs", "criticals")
+
+
+def _has_blocking_findings(scans: List[dict], minimum_severity: str) -> bool:
+    try:
+        minimum_index = BLOCKABLE_SEVERITY_ORDER.index(minimum_severity)
+    except ValueError:
+        return False
+
+    for scan in scans:
+        for index, field_name in enumerate(SEVERITY_FIELDS_IN_ORDER):
+            if index < minimum_index:
+                continue
+            if scan.get(field_name, 0):
+                return True
+
+    return False
+
 
 def _calculate_stage_progress(stage: dict) -> Optional[int]:
     """Return progress percentage rounded down, clamped to [0, 100]."""
@@ -209,6 +228,7 @@ def validate_and_retrieve_extra_payload(args):
 def start_scans_command_handler(args):
     filters = prepare_filters_for_api(TargetApiFiltersSchema, args)
     targets_ids = args.target_ids
+    block_severity = getattr(args, "block", None)
 
     if not filters and not targets_ids:
         raise ProbelyCLIValidation("either filters or Target IDs must be provided.")
@@ -232,6 +252,9 @@ def start_scans_command_handler(args):
     else:
         scans = start_scans(targets_ids, extra_payload)
 
+    if block_severity and args.wait is None:
+        args.wait = 0
+
     if args.wait is None:
         display_scans_response_output(args, scans)
         return
@@ -241,6 +264,16 @@ def start_scans_command_handler(args):
     )
     for scan in final_scans:
         _print_scan_summary(args, scan)
-    if args.wait is not None:
-        return
-    display_scans_response_output(args, final_scans)
+
+    has_blocking_findings = False
+    if block_severity:
+        has_blocking_findings = _has_blocking_findings(final_scans, block_severity)
+
+    if args.output:
+        display_scans_response_output(args, final_scans)
+
+    if block_severity:
+        if has_blocking_findings:
+            args.console.print("DAST tests FAILED!")
+            raise SystemExit(1)
+        args.console.print("DAST tests passed!")

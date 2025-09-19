@@ -206,6 +206,17 @@ def build_targets_parser():
         ),
         default=None,
     )
+    start_scan_parser.add_argument(
+        "-b",
+        "--block",
+        metavar="SEVERITY",
+        type=str.lower,
+        choices=["critical", "high", "medium", "low"],
+        help=(
+            "Exit with an error if findings of the chosen severity or higher are present."
+        ),
+        default=None,
+    )
     start_scan_parser.set_defaults(
         command_handler=start_scans_command_handler,
         parser=start_scan_parser,
